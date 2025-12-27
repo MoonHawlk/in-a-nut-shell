@@ -7,7 +7,54 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define MAX_LINE 80
+#define LINE_BUFFER_SIZE 1024 // Can be more, however, consider that when creating a history command, this may take storage and could cause leakage 
+#define TRUE 1
+#define FALSE 0 
+
+char *s_sh_read_line(void)
+{
+    int buffersize = LINE_BUFFER_SIZE;
+    int position = 0;
+    char *buffer = malloc(sizeof(char) * buffersize);
+    int element;
+
+    if (!buffer)
+    {
+        fprintf(stderr, "ssh: Allocation Error");
+        exit(EXIT_FAILURE);
+    }
+
+    // We "check" of exists the next element.
+    // If yes, add to the array and go to the next
+    // Else, stops and return
+    while(TRUE) {
+
+        element = getchar();
+
+        if (element == EOF || element == '\n')
+        {
+            buffer[position] = '\0';
+            return buffer;
+
+        } else {
+            buffer[position] = element;
+        }
+        position++;
+
+        // Check if we exceeded the buffer size
+        // If yes, we try to realocate.
+        if(position >= buffersize) {
+            buffersize += LINE_BUFFER_SIZE;
+            buffer = realloc(buffer, buffersize);
+            if (!buffer) {
+                fprintf(stderr, "ssh: Allocation Error");
+                exit(EXIT_FAILURE);
+            }
+        }
+
+    }
+}
+
 
 void s_sh_loop(void)
 {
