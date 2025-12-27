@@ -1,0 +1,2 @@
+echo entrou
+exit

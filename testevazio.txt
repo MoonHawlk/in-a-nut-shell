@@ -1,0 +1,4 @@
+ps; ls; casa; ls
+echo 1
+
+exit
