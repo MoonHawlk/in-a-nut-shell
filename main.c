@@ -19,6 +19,7 @@
                 3 - Create a parallel mode.
                 4 - Create Redirects.
                 5 - Create Pipepes.
+                6 - Refactor the code to enhance readability and modularity.
 
   @cite         Code based ,inspired by and built upon the knowledge shared by Stephen Brennan
                 (https://brennan.io/2015/01/16/write-a-shell-in-c/)
