@@ -20,24 +20,22 @@
                 Credits to him for creating such an excellent tutorial, which allowed me to quickly 
                 improve my previous implementation and reminded me of the old C days back in college.
 
-/**************************************************************************************************/
+**************************************************************************************************/
 
 #include <sys/types.h>
 #include <sys/wait.h>
 
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 
-#define LINE_BUFFER_SIZE 1024 // Can be more, however, consider that when creating a history command, this may take storage and could cause leakage 
+#define LINE_BUFFER_SIZE 1024
 #define FMSH_TOK_BUFFER_SIZE 64
 #define FMSH_TOK_DELIMITER " \t\r\n\a"
-#define TRUE 1
-#define FALSE 0 
-
-
 
 /*
   Function Declarations for builtin shell commands:
@@ -45,12 +43,6 @@
 int fmsh_cd(char **args);
 int fmsh_help(char **args);
 int fmsh_exit(char **args);
-
-
-int fmsh_exit(char **args)
-{
-  return 0;
-}
 
 /*
   List of builtin commands, followed by their corresponding functions.
@@ -67,7 +59,8 @@ int (*builtin_func[]) (char **) = {
   &fmsh_exit
 };
 
-int fmsh_num_builtins() {
+int fmsh_num_builtins(void)
+{
   return sizeof(builtin_str) / sizeof(char *);
 }
 
@@ -88,7 +81,9 @@ int fmsh_cd(char **args)
 
 int fmsh_help(char **args)
 {
+  (void)args;
   int i;
+
   printf("Filipe Moreno's fmsh\n");
   printf("Type program names and arguments, and hit enter.\n");
   printf("The following are built in:\n");
@@ -101,10 +96,27 @@ int fmsh_help(char **args)
   return 1;
 }
 
+/*
+  exit builtin
+  Supports optional exit code (e.g. exit 2)
+*/
+int fmsh_exit(char **args)
+{
+  int exit_code = EXIT_SUCCESS;
 
+  if (args[1] != NULL) {
+    exit_code = atoi(args[1]);
+  }
+
+  exit(exit_code);
+}
+
+/*
+  Launch external programs
+*/
 int fmsh_launch(char **args)
 {
-  pid_t pid, wpid;
+  pid_t pid;
   int status;
 
   pid = fork();
@@ -113,14 +125,18 @@ int fmsh_launch(char **args)
     if (execvp(args[0], args) == -1) {
       perror("fmsh");
     }
-    exit(EXIT_FAILURE);
+    _exit(EXIT_FAILURE);
+
   } else if (pid < 0) {
-    // Error forking
     perror("fmsh");
+
   } else {
-    // Parent process
     do {
-      wpid = waitpid(pid, &status, WUNTRACED);
+      pid_t wpid = waitpid(pid, &status, 0);
+      if (wpid == -1 && errno != EINTR) {
+        perror("fmsh");
+        break;
+      }
     } while (!WIFEXITED(status) && !WIFSIGNALED(status));
   }
 
@@ -129,80 +145,104 @@ int fmsh_launch(char **args)
 
 void allocation_error_callback(void)
 {
-    fprintf(stderr, "fmsh: Allocation Error\n");
-    exit(EXIT_FAILURE);
+  fprintf(stderr, "fmsh: Allocation Error\n");
+  exit(EXIT_FAILURE);
 }
 
+/*
+  ISO C replacement for strdup (portable, safe)
+*/
+char *fmsh_strdup(const char *src)
+{
+  size_t len = strlen(src) + 1;
+  char *dst = malloc(len);
+
+  if (!dst) {
+    allocation_error_callback();
+  }
+
+  memcpy(dst, src, len);
+  return dst;
+}
+
+/*
+  Split line into tokens.
+  Tokens are now owned by the caller,
+  making this safe for future features like history and pipes.
+*/
 char **fmsh_split_line(char *line)
 {
-    int buffer_size = FMSH_TOK_BUFFER_SIZE, position = 0;
-    char **tokens = malloc(buffer_size * sizeof(char*));
-    char *token;
+  int buffer_size = FMSH_TOK_BUFFER_SIZE;
+  int position = 0;
 
-    if (!tokens) {
+  char **tokens = malloc(buffer_size * sizeof(char *));
+  char *token;
+
+  if (!tokens) {
+    allocation_error_callback();
+  }
+
+  token = strtok(line, FMSH_TOK_DELIMITER);
+  while (token != NULL) {
+
+    tokens[position++] = fmsh_strdup(token);
+
+    if (position >= buffer_size) {
+      buffer_size *= 2;
+      tokens = realloc(tokens, buffer_size * sizeof(char *));
+      if (!tokens) {
         allocation_error_callback();
+      }
     }
 
-    token = strtok(line, FMSH_TOK_DELIMITER);
-    while (token != NULL) 
-    {
-        tokens[position] = token;
-        position++;
+    token = strtok(NULL, FMSH_TOK_DELIMITER);
+  }
 
-        if (position >= buffer_size)
-        {
-            buffer_size += FMSH_TOK_BUFFER_SIZE;
-            tokens = realloc(tokens, buffer_size * sizeof(char*));
-
-            if (!tokens) {
-                allocation_error_callback();
-            }
-        }
-        token = strtok(NULL, FMSH_TOK_DELIMITER);
-    }
-    tokens[position] = NULL;
-    return tokens;
+  tokens[position] = NULL;
+  return tokens;
 }
+
+
+/*
+  Read a full line from stdin.
+  Exits shell cleanly on EOF (Ctrl+D).
+*/
 char *fmsh_read_line(void)
 {
-    int buffersize = LINE_BUFFER_SIZE;
-    int position = 0;
-    char *buffer = malloc(sizeof(char) * buffersize);
-    int element;
+  int buffersize = LINE_BUFFER_SIZE;
+  int position = 0;
+  char *buffer = malloc(buffersize);
+  int element;
 
-    if (!buffer)
-    {
+  if (!buffer) {
+    allocation_error_callback();
+  }
+
+  while (true) {
+
+    element = getchar();
+
+    if (element == EOF) {
+      free(buffer);
+      printf("\n");
+      exit(EXIT_SUCCESS);
+    }
+
+    if (element == '\n') {
+      buffer[position] = '\0';
+      return buffer;
+    }
+
+    buffer[position++] = (char)element;
+
+    if (position >= buffersize) {
+      buffersize *= 2;
+      buffer = realloc(buffer, buffersize);
+      if (!buffer) {
         allocation_error_callback();
+      }
     }
-
-    // We "check" of exists the next element.
-    // If yes, add to the array and go to the next
-    // Else, stops and return
-    while(TRUE) {
-
-        element = getchar();
-
-        if (element == EOF || element == '\n')
-        {
-            buffer[position] = '\0';
-            return buffer;
-
-        } else {
-            buffer[position] = element;
-        }
-        position++;
-
-        // Check if we exceeded the buffer size
-        // If yes, we try to realocate.
-        if(position >= buffersize) {
-            buffersize += LINE_BUFFER_SIZE;
-            buffer = realloc(buffer, buffersize);
-            if (!buffer) {
-                allocation_error_callback();
-            }
-        }
-
-    }
+  }
 }
 
 int fmsh_execute(char **args)
@@ -210,7 +250,6 @@ int fmsh_execute(char **args)
   int i;
 
   if (args[0] == NULL) {
-    // An empty command was entered.
     return 1;
   }
 
@@ -223,34 +262,39 @@ int fmsh_execute(char **args)
   return fmsh_launch(args);
 }
 
+void fmsh_free_args(char **args)
+{
+  int i;
+  for (i = 0; args[i] != NULL; i++) {
+    free(args[i]);
+  }
+  free(args);
+}
+
 void fmsh_loop(void)
 {
-    // To-Do
-    // Create a sequencitial mode & parallel mode
+  char *line;
+  char **args;
+  int status;
 
-    char *line;
-    char **args;
-    int status;
+  do {
+    printf("[>] ");
+    line = fmsh_read_line();
+    args = fmsh_split_line(line);
+    status = fmsh_execute(args);
 
-    do {
-        printf("> ");
-        line   = fmsh_read_line();
-        args   = fmsh_split_line(line);
-        status = fmsh_execute(args);
+    free(line);
+    fmsh_free_args(args);
 
-        free(line);
-        free(args);
-    } while (status);
-
+  } while (status);
 }
 
 int main(int argc, char **argv)
 {
-    // To-Do
-    // Add Initialization
-    // Add Calendar/Welcome
+  (void)argc;
+  (void)argv;
 
-    fmsh_loop(); // AKA Filipe Moreno Shell... I've changed it :D!!
+  fmsh_loop();
 
-    return EXIT_SUCCESS;
+  return EXIT_SUCCESS;
 }
