@@ -46,7 +46,7 @@
 
 /****************************
    Builtin declarations
-**************************** /
+****************************/
 int fmsh_cd(char **args);
 int fmsh_help(char **args);
 int fmsh_exit(char **args);
