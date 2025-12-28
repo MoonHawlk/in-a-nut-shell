@@ -1,4 +1,4 @@
-/*****************************************************************************
+/**************************************************************************************************
 
   @file         main.c
 
@@ -14,7 +14,13 @@
                 4 - Create Redirects
                 5 - Create Pipepes
 
-*******************************************************************************/
+  @cite         Code based ,inspired by and built upon the knowledge shared by Stephen Brennan
+                (https://brennan.io/2015/01/16/write-a-shell-in-c/)
+
+                Credits to him for creating such an excellent tutorial, which allowed me to quickly 
+                improve my previous implementation and reminded me of the old C days back in college.
+
+/**************************************************************************************************/
 
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -26,9 +32,137 @@
 #include <stdio.h>
 
 #define LINE_BUFFER_SIZE 1024 // Can be more, however, consider that when creating a history command, this may take storage and could cause leakage 
+#define FMSH_TOK_BUFFER_SIZE 64
+#define FMSH_TOK_DELIMITER " \t\r\n\a"
 #define TRUE 1
 #define FALSE 0 
 
+
+
+/*
+  Function Declarations for builtin shell commands:
+ */
+int fmsh_cd(char **args);
+int fmsh_help(char **args);
+int fmsh_exit(char **args);
+
+
+int fmsh_exit(char **args)
+{
+  return 0;
+}
+
+/*
+  List of builtin commands, followed by their corresponding functions.
+ */
+char *builtin_str[] = {
+  "cd",
+  "help",
+  "exit"
+};
+
+int (*builtin_func[]) (char **) = {
+  &fmsh_cd,
+  &fmsh_help,
+  &fmsh_exit
+};
+
+int fmsh_num_builtins() {
+  return sizeof(builtin_str) / sizeof(char *);
+}
+
+/*
+  Builtin function implementations.
+*/
+int fmsh_cd(char **args)
+{
+  if (args[1] == NULL) {
+    fprintf(stderr, "fmsh: expected argument to \"cd\"\n");
+  } else {
+    if (chdir(args[1]) != 0) {
+      perror("fmsh");
+    }
+  }
+  return 1;
+}
+
+int fmsh_help(char **args)
+{
+  int i;
+  printf("Filipe Moreno's fmsh\n");
+  printf("Type program names and arguments, and hit enter.\n");
+  printf("The following are built in:\n");
+
+  for (i = 0; i < fmsh_num_builtins(); i++) {
+    printf("  %s\n", builtin_str[i]);
+  }
+
+  printf("Use the man command for information on other programs.\n");
+  return 1;
+}
+
+
+int fmsh_launch(char **args)
+{
+  pid_t pid, wpid;
+  int status;
+
+  pid = fork();
+  if (pid == 0) {
+    // Child process
+    if (execvp(args[0], args) == -1) {
+      perror("fmsh");
+    }
+    exit(EXIT_FAILURE);
+  } else if (pid < 0) {
+    // Error forking
+    perror("fmsh");
+  } else {
+    // Parent process
+    do {
+      wpid = waitpid(pid, &status, WUNTRACED);
+    } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+  }
+
+  return 1;
+}
+
+void allocation_error_callback(void)
+{
+    fprintf(stderr, "fmsh: Allocation Error\n");
+    exit(EXIT_FAILURE);
+}
+
+char **fmsh_split_line(char *line)
+{
+    int buffer_size = FMSH_TOK_BUFFER_SIZE, position = 0;
+    char **tokens = malloc(buffer_size * sizeof(char*));
+    char *token;
+
+    if (!tokens) {
+        allocation_error_callback();
+    }
+
+    token = strtok(line, FMSH_TOK_DELIMITER);
+    while (token != NULL) 
+    {
+        tokens[position] = token;
+        position++;
+
+        if (position >= buffer_size)
+        {
+            buffer_size += FMSH_TOK_BUFFER_SIZE;
+            tokens = realloc(tokens, buffer_size * sizeof(char*));
+
+            if (!tokens) {
+                allocation_error_callback();
+            }
+        }
+        token = strtok(NULL, FMSH_TOK_DELIMITER);
+    }
+    tokens[position] = NULL;
+    return tokens;
+}
 char *fmsh_read_line(void)
 {
     int buffersize = LINE_BUFFER_SIZE;
@@ -38,8 +172,7 @@ char *fmsh_read_line(void)
 
     if (!buffer)
     {
-        fprintf(stderr, "ssh: Allocation Error");
-        exit(EXIT_FAILURE);
+        allocation_error_callback();
     }
 
     // We "check" of exists the next element.
@@ -65,14 +198,30 @@ char *fmsh_read_line(void)
             buffersize += LINE_BUFFER_SIZE;
             buffer = realloc(buffer, buffersize);
             if (!buffer) {
-                fprintf(stderr, "ssh: Allocation Error");
-                exit(EXIT_FAILURE);
+                allocation_error_callback();
             }
         }
 
     }
 }
 
+int fmsh_execute(char **args)
+{
+  int i;
+
+  if (args[0] == NULL) {
+    // An empty command was entered.
+    return 1;
+  }
+
+  for (i = 0; i < fmsh_num_builtins(); i++) {
+    if (strcmp(args[0], builtin_str[i]) == 0) {
+      return (*builtin_func[i])(args);
+    }
+  }
+
+  return fmsh_launch(args);
+}
 
 void fmsh_loop(void)
 {
