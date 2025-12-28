@@ -1,4 +1,4 @@
-/**************************************************************************************************
+/***********************************************************************************************************************************
 
   @file         main.c
 
@@ -8,11 +8,17 @@
 
   @brief        fmsh (Filipe Moreno Shell)
 
-  @todo         1 - Create a history command (maybe !! can solve that)
-                2 - Make the shell read more than one command using ;
-                3 - Create a parallel mode
-                4 - Create Redirects
-                5 - Create Pipepes
+  @todo         Simple
+                
+                1 - Add Initialization options (Such as name of user and show time of commands). (Done - 28 December 2025)
+                2 - Add Calendar/Welcome menssage when start. (Done - 28 December 2025) 
+
+                Complex
+                1 - Create a history command (maybe !! can solve that).
+                2 - Make the shell read more than one command using ; .
+                3 - Create a parallel mode.
+                4 - Create Redirects.
+                5 - Create Pipepes.
 
   @cite         Code based ,inspired by and built upon the knowledge shared by Stephen Brennan
                 (https://brennan.io/2015/01/16/write-a-shell-in-c/)
@@ -20,7 +26,7 @@
                 Credits to him for creating such an excellent tutorial, which allowed me to quickly 
                 improve my previous implementation and reminded me of the old C days back in college.
 
-**************************************************************************************************/
+***********************************************************************************************************************************/
 
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -32,28 +38,42 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <time.h>
 
 #define LINE_BUFFER_SIZE 1024
 #define FMSH_TOK_BUFFER_SIZE 64
 #define FMSH_TOK_DELIMITER " \t\r\n\a"
 
-/*
-  Function Declarations for builtin shell commands:
- */
+/****************************
+   Builtin declarations
+**************************** /
 int fmsh_cd(char **args);
 int fmsh_help(char **args);
 int fmsh_exit(char **args);
 
-/*
-  List of builtin commands, followed by their corresponding functions.
- */
+/****************************
+   Configuration
+****************************/
+typedef struct {
+  char user_name[64];
+  bool show_time;
+} fmsh_config_t;
+
+static fmsh_config_t fmsh_config = {
+  .user_name = "",
+  .show_time = false
+};
+
+/****************************
+   Builtin table
+****************************/
 char *builtin_str[] = {
   "cd",
   "help",
   "exit"
 };
 
-int (*builtin_func[]) (char **) = {
+int (*builtin_func[])(char **) = {
   &fmsh_cd,
   &fmsh_help,
   &fmsh_exit
@@ -64,9 +84,9 @@ int fmsh_num_builtins(void)
   return sizeof(builtin_str) / sizeof(char *);
 }
 
-/*
-  Builtin function implementations.
-*/
+/****************************
+   Builtins
+****************************/
 int fmsh_cd(char **args)
 {
   if (args[1] == NULL) {
@@ -96,10 +116,6 @@ int fmsh_help(char **args)
   return 1;
 }
 
-/*
-  exit builtin
-  Supports optional exit code (e.g. exit 2)
-*/
 int fmsh_exit(char **args)
 {
   int exit_code = EXIT_SUCCESS;
@@ -111,17 +127,95 @@ int fmsh_exit(char **args)
   exit(exit_code);
 }
 
-/*
-  Launch external programs
-*/
+/****************************
+   Config loading
+****************************/
+void fmsh_load_config(const char *path)
+{
+  FILE *file = fopen(path, "r");
+  char line[128];
+
+  if (!file) {
+    return; /* optional */
+  }
+
+  while (fgets(line, sizeof(line), file)) {
+
+    if (line[0] == '#' || line[0] == '\n') {
+      continue;
+    }
+
+    char *key = strtok(line, "=");
+    char *value = strtok(NULL, "\n");
+
+    if (!key || !value) {
+      continue;
+    }
+
+    if (strcmp(key, "USER_NAME") == 0) {
+      strncpy(fmsh_config.user_name, value,
+              sizeof(fmsh_config.user_name) - 1);
+      fmsh_config.user_name[sizeof(fmsh_config.user_name) - 1] = '\0';
+    }
+    else if (strcmp(key, "SHOW_TIME") == 0) {
+      fmsh_config.show_time = (atoi(value) != 0);
+    }
+  }
+
+  fclose(file);
+}
+
+/****************************
+   User name normalization
+****************************/
+void fmsh_init_user_name(void)
+{
+  const char *env_user;
+
+  if (fmsh_config.user_name[0] != '\0') {
+    return;
+  }
+
+  env_user = getenv("USER");
+  if (env_user && env_user[0] != '\0') {
+    strncpy(fmsh_config.user_name, env_user,
+            sizeof(fmsh_config.user_name) - 1);
+    fmsh_config.user_name[sizeof(fmsh_config.user_name) - 1] = '\0';
+    return;
+  }
+
+  strcpy(fmsh_config.user_name, "fmsh");
+}
+
+/****************************
+   Welcome / Calendar
+****************************/
+void fmsh_print_welcome(void)
+{
+  time_t now = time(NULL);
+  struct tm *tm_info = localtime(&now);
+
+  printf("========================================\n");
+  printf(" Welcome to fmsh\n");
+  printf(" User: %s\n", fmsh_config.user_name);
+  printf(" Date: %02d/%02d/%04d\n",
+         tm_info->tm_mday,
+         tm_info->tm_mon + 1,
+         tm_info->tm_year + 1900);
+  printf("========================================\n");
+}
+
+/****************************
+   Process launching
+****************************/
 int fmsh_launch(char **args)
 {
   pid_t pid;
   int status;
 
   pid = fork();
+
   if (pid == 0) {
-    // Child process
     if (execvp(args[0], args) == -1) {
       perror("fmsh");
     }
@@ -132,8 +226,7 @@ int fmsh_launch(char **args)
 
   } else {
     do {
-      pid_t wpid = waitpid(pid, &status, 0);
-      if (wpid == -1 && errno != EINTR) {
+      if (waitpid(pid, &status, 0) == -1 && errno != EINTR) {
         perror("fmsh");
         break;
       }
@@ -143,15 +236,15 @@ int fmsh_launch(char **args)
   return 1;
 }
 
+/****************************
+   Memory helpers
+****************************/
 void allocation_error_callback(void)
 {
   fprintf(stderr, "fmsh: Allocation Error\n");
   exit(EXIT_FAILURE);
 }
 
-/*
-  ISO C replacement for strdup (portable, safe)
-*/
 char *fmsh_strdup(const char *src)
 {
   size_t len = strlen(src) + 1;
@@ -165,16 +258,13 @@ char *fmsh_strdup(const char *src)
   return dst;
 }
 
-/*
-  Split line into tokens.
-  Tokens are now owned by the caller,
-  making this safe for future features like history and pipes.
-*/
+/****************************
+   Parsing
+****************************/
 char **fmsh_split_line(char *line)
 {
   int buffer_size = FMSH_TOK_BUFFER_SIZE;
   int position = 0;
-
   char **tokens = malloc(buffer_size * sizeof(char *));
   char *token;
 
@@ -202,17 +292,15 @@ char **fmsh_split_line(char *line)
   return tokens;
 }
 
-
-/*
-  Read a full line from stdin.
-  Exits shell cleanly on EOF (Ctrl+D).
-*/
+/**************************** 
+   Input
+****************************/
 char *fmsh_read_line(void)
 {
   int buffersize = LINE_BUFFER_SIZE;
   int position = 0;
   char *buffer = malloc(buffersize);
-  int element;
+  int c;
 
   if (!buffer) {
     allocation_error_callback();
@@ -220,20 +308,20 @@ char *fmsh_read_line(void)
 
   while (true) {
 
-    element = getchar();
+    c = getchar();
 
-    if (element == EOF) {
+    if (c == EOF) {
       free(buffer);
       printf("\n");
       exit(EXIT_SUCCESS);
     }
 
-    if (element == '\n') {
+    if (c == '\n') {
       buffer[position] = '\0';
       return buffer;
     }
 
-    buffer[position++] = (char)element;
+    buffer[position++] = (char)c;
 
     if (position >= buffersize) {
       buffersize *= 2;
@@ -245,6 +333,9 @@ char *fmsh_read_line(void)
   }
 }
 
+/**************************** 
+   Execution
+****************************/
 int fmsh_execute(char **args)
 {
   int i;
@@ -264,13 +355,15 @@ int fmsh_execute(char **args)
 
 void fmsh_free_args(char **args)
 {
-  int i;
-  for (i = 0; args[i] != NULL; i++) {
+  for (int i = 0; args[i] != NULL; i++) {
     free(args[i]);
   }
   free(args);
 }
 
+/****************************    
+    Main loop
+****************************/
 void fmsh_loop(void)
 {
   char *line;
@@ -278,7 +371,20 @@ void fmsh_loop(void)
   int status;
 
   do {
-    printf("[>] ");
+
+    if (fmsh_config.show_time) {
+      time_t now = time(NULL);
+      struct tm *tm_info = localtime(&now);
+
+      printf("[%02d:%02d:%02d %s]> ",
+             tm_info->tm_hour,
+             tm_info->tm_min,
+             tm_info->tm_sec,
+             fmsh_config.user_name);
+    } else {
+      printf("[%s]> ", fmsh_config.user_name);
+    }
+
     line = fmsh_read_line();
     args = fmsh_split_line(line);
     status = fmsh_execute(args);
@@ -289,11 +395,17 @@ void fmsh_loop(void)
   } while (status);
 }
 
+/**************************** 
+   Entry point
+*****************************/
 int main(int argc, char **argv)
 {
   (void)argc;
   (void)argv;
 
+  fmsh_load_config("fmsh_configs.fmsh");
+  fmsh_init_user_name();
+  fmsh_print_welcome();
   fmsh_loop();
 
   return EXIT_SUCCESS;

@@ -1,0 +1,7 @@
+# Helper
+# One KEY=VALUE per line
+# Lines starting with # are ignored
+# Missing file = defaults are used
+
+USER_NAME=Filipe Moreno
+SHOW_TIME=1
