@@ -1,3 +1,21 @@
+/*****************************************************************************
+
+  @file         main.c
+
+  @author       Filipe Moreno
+
+  @date         Saturday,  27 December 2025
+
+  @brief        fmsh (Filipe Moreno Shell)
+
+  @todo         1 - Create a history command (maybe !! can solve that)
+                2 - Make the shell read more than one command using ;
+                3 - Create a parallel mode
+                4 - Create Redirects
+                5 - Create Pipepes
+
+*******************************************************************************/
+
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -11,7 +29,7 @@
 #define TRUE 1
 #define FALSE 0 
 
-char *s_sh_read_line(void)
+char *fmsh_read_line(void)
 {
     int buffersize = LINE_BUFFER_SIZE;
     int position = 0;
@@ -56,7 +74,7 @@ char *s_sh_read_line(void)
 }
 
 
-void s_sh_loop(void)
+void fmsh_loop(void)
 {
     // To-Do
     // Create a sequencitial mode & parallel mode
@@ -67,9 +85,9 @@ void s_sh_loop(void)
 
     do {
         printf("> ");
-        line   = s_sh_read_line();
-        args   = s_sh_split_line(line);
-        status = s_sh_execute(args);
+        line   = fmsh_read_line();
+        args   = fmsh_split_line(line);
+        status = fmsh_execute(args);
 
         free(line);
         free(args);
@@ -83,7 +101,7 @@ int main(int argc, char **argv)
     // Add Initialization
     // Add Calendar/Welcome
 
-    s_sh_loop(); // AKA Simple Sh... Later will change (maybe never)
+    fmsh_loop(); // AKA Filipe Moreno Shell... I've changed it :D!!
 
     return EXIT_SUCCESS;
 }
