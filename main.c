@@ -21,7 +21,7 @@
                 5 - Create Pipepes.
                 6 - Refactor the code to enhance readability and modularity.
 
-  @cite         Code based ,inspired by and built upon the knowledge shared by Stephen Brennan
+  @cite         Code based on, inspired by, and built upon the knowledge shared by Stephen Brennan.
                 (https://brennan.io/2015/01/16/write-a-shell-in-c/)
 
                 Credits to him for creating such an excellent tutorial, which allowed me to quickly 
