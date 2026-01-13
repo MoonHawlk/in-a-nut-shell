@@ -1,10 +1,14 @@
-CC = gcc
+CC      = gcc
+CFLAGS  = -Wall -Wextra -std=c11
+TARGET  = fmsh
+SRC     = main.c
 
-objects = shell.o 
+all: $(TARGET)
 
-output: $(objects)
-	$(CC) -o shell shell.o 
+$(TARGET): $(SRC)
+	$(CC) $(CFLAGS) $(SRC) -o $(TARGET)
 
-.PHONY: clean
 clean:
-	rm $(objects) shell 
+	rm -f $(TARGET)
+
+.PHONY: all clean
